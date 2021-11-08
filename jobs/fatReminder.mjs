@@ -1,7 +1,5 @@
 import { Bot, Context } from 'grammy';
 import fs from 'fs'
-import later from 'later';
-import Bree from 'bree';
 import {workerData} from 'worker_threads';
 
 const token = fs.readFileSync('token.secret').toString()

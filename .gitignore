@@ -1,4 +1,6 @@
 token.secret
 database.json
-sourceMaterial.js
+sourceMaterial.mjs
 node_modules
+dist
+openai_key.secret

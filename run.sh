@@ -1,1 +1,0 @@
-deno run --allow-env --allow-net --import-map=import_map.json --allow-read --unstable --no-check main.ts
