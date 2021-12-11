@@ -1,70 +1,15 @@
 import { Bot, Context } from 'grammy';
 import fs from 'fs'
-import later from '@breejs/later';
-import Bree from 'bree';
 import * as chrono from 'chrono-node';
+import database, {JobOptions} from './databaseInterface';
+import taskScheduler from './taskScheduler';
 
 const token = fs.readFileSync('token.secret').toString()
-
-interface JobOptions {
-    name: string,
-    path: string,
-    interval: later.ScheduleData
-    worker: object
-}
-
-interface BasicDatabase {
-    filePath: string,
-    data: {
-        jobs: {[key: string]: JobOptions},
-        userState: {[key: number]: {[flag: string]: string}}
-    }
-}
-
-class BasicDatabase implements BasicDatabase {
-    constructor(filePath:string) {
-        this.filePath = filePath;
-        const rawData = fs.readFileSync(this.filePath).toString();
-        if(rawData) {
-            this.data = JSON.parse(rawData) 
-        } else {
-            this.data = {jobs: {}, userState: {}}
-            this.save();
-        }
-    }
-
-    hasJob(name:string) {
-        return !!this.data.jobs[name];
-    }
-
-    addJob(job: JobOptions) {
-        this.data.jobs[job.name] = job;
-        this.save();
-    }
-
-    removeJob(jobName: string) {
-        delete this.data.jobs[jobName];
-        this.save();
-    }
-
-    save() {
-        fs.writeFileSync(this.filePath, JSON.stringify(this.data))
-    }
-}
-const database = new BasicDatabase('database.json');
-
 
 // Create bot object
 const bot = new Bot(token); // <-- place your bot token inside this string
 
-const bree = new Bree({
-    root: false,
-    jobs: Object.values(database.data.jobs),
-});
-
-
-bree.start();
-
+taskScheduler.start()
 const newUserSetup = async (ctx: Context) => {
     const chatId = ctx.chat.id;
 
@@ -80,22 +25,17 @@ const newUserSetup = async (ctx: Context) => {
     const job: JobOptions = {
         name: 'fatReminder-'+chatId,
         path: './jobs/fatReminder.mjs',
-        interval: later.parse.text('8:00'),
-        worker: {
-            workerData: {
-                chatId
-            }
-        }
     }
     database.addJob(job)
-    bree.add(job)
-    bree.start('fatReminder-'+chatId)
+    taskScheduler.add(job)
     
     await setReminderTime(ctx);
 }
 
 const setReminderTime = async (ctx: Context) => {
-    const chatId = ctx.chat.id;
+    const chatId = ctx.chat?.id;
+    if(!chatId) return;
+
     await ctx.reply("Okay bitch, here's what you're going to do. You're going to give me two dates/times, one at a time. I'm going to use that to compute the pattern of how often to give you notifications.")
     await ctx.reply("Now give me the first date/time bitch.")
     
@@ -106,7 +46,8 @@ const setReminderTime = async (ctx: Context) => {
 }
 
 const responseHandler = async (ctx: Context) => {
-    const chatId = ctx.chat.id;
+    const chatId = ctx.chat?.id;
+    if(!chatId) return;
 
     switch(database.data.userState[chatId].flag) {
         case 'setTime1':
@@ -120,11 +61,13 @@ const responseHandler = async (ctx: Context) => {
 
             break;
         case 'setTime2':
-            const secondTime = chrono.parseDate(ctx.message.text).toISOString();
+            const secondTime = new Date(chrono.parseDate(ctx.message.text).toISOString());
 
-            const firstTime = chrono.parseDate(database.data.userState[chatId].data).toISOString();
-            const interval = later.schedule(later.parse.recur().on(firstTime, secondTime).second())
-            if(!interval.isValid()) {
+            const firstTime = new Date(chrono.parseDate(database.data.userState[chatId].data).toISOString());
+            const timeDifference = secondTime.getTime() - firstTime.getTime()
+            console.log('date portions', firstTime, secondTime)
+           
+            if(!firstTime || !secondTime) {
                 ctx.reply("No comprendo, gordo. Try again. From the beginning, what's the first date/time?")
                 database.data.userState[chatId] = {
                     flag: 'setTime1'
@@ -133,30 +76,14 @@ const responseHandler = async (ctx: Context) => {
                 return;
             }
 
-            console.log('interval', interval.isValid(), interval.next())
-            return;
-            if(database.hasJob('fatInsulter-'+chatId)) {
-                database.removeJob('fatInsulter-'+chatId);
-                await bree.remove('fatInsulter-'+chatId)
-            };
-
-            const job: JobOptions = {
-                name: 'fatInsulter-'+chatId,
-                path: './jobs/fatInsulter.mjs',
-                interval,
-                worker: {
-                    workerData: {
-                        chatId
-                    }
-                }
-            }
-            database.addJob(job)
-            bree.add(job)
-            bree.start('fatInsulter-'+chatId)
-            database.data.userState[chatId] = {flag: 'standby'};
+            Object.assign(database.data.userState[chatId], {
+                flag: 'standby',
+                nextNotification: firstTime.getTime(),
+                notificationInterval: timeDifference,
+            })
             await database.save()
 
-            ctx.reply(`Okay, I'll tell you what you need to hear. You've scheduled me for ${later.schedule(interval).next(1)}.`)
+            ctx.reply(`Okay, I'll tell you what you need to hear. First time ${firstTime.toLocaleString} repeating with ${secondTime.toLocaleString()}. Of course times are in my timezone.`)
             break;
         default:
             ctx.reply("I can't understand you with a mouth full of food.")
@@ -164,7 +91,8 @@ const responseHandler = async (ctx: Context) => {
 }
 
 const removeUser = async (ctx: Context) => {
-    const chatId = ctx.chat.id;
+    const chatId = ctx.chat?.id;
+    if(!chatId) return;
     console.log('chatId', chatId)
     database.removeJob('fatReminder-'+chatId)
     database.removeJob('fatInsulter-'+chatId)

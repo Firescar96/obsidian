@@ -1,18 +1,16 @@
 {
   "scripts": {
-    "start": "npx tsc --skipLibCheck; node dist/main.js"
+    "start": "npx tsc --skipLibCheck; node dist/main.js",
+    "dev": "TS_NODE=true NODE_OPTIONS=\"-r ts-node/register\" node ."
   },
   "dependencies": {
-    "@breejs/later": "^4.1.0",
-    "agenda": "^4.2.1",
     "axios": "^0.24.0",
-    "bree": "^6.5.0",
     "chrono-node": "^2.3.2",
     "dayjs": "^1.10.7",
-    "eslint": "^8.2.0",
     "grammy": "^1.4.0"
   },
   "devDependencies": {
+    "eslint": "^8.2.0",
     "@types/node": "^16.11.6",
     "@types/node-fetch": "^3.0.3",
     "ts-node": "^10.4.0",
